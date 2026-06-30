@@ -52,11 +52,13 @@ def init_params(obs_dim=4, D=48, K=4, seed=0, skew_scale=0.4):
     }
 
 
-def forward(p, X, gate_on=True, dt=0.5):
+def forward(p, X, gate_on=True, force=None, dt=0.5):
     """
     X: (B, T, obs_dim)
-    gate_on=False forces g_t = 1 everywhere (the ablation that pays uniformly and
-    advances the winding every step — which should break protected memory).
+    gate_on=True  -> excitable surprise gate (the real cell)
+    gate_on=False -> g = 1 everywhere (uniform: pays the arrow every step)
+    force=0.0     -> g = 0 everywhere (S-only floor: arrow off, no rotor advance)
+    force=v       -> g = v everywhere
     Returns preds (carrier), task (parity logits), gate, aflow.
     """
     B, T, _ = X.shape
@@ -77,7 +79,9 @@ def forward(p, X, gate_on=True, dt=0.5):
     for t in range(T):
         xt = X[:, t, :]
         err = anp.mean((xt - xhat) ** 2, axis=1)
-        if gate_on:
+        if force is not None:
+            g = force * anp.ones(B)
+        elif gate_on:
             g = sigmoid(slope * (err - p["g_thresh"])) * (1.0 - r)
             r = rho * r + (1.0 - rho) * g
         else:

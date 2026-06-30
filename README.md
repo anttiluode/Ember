@@ -46,23 +46,32 @@ Run it yourself (numbers below are from the committed code, CPU, seeds fixed):
 | the gate is load-bearing (not decoration) | **[V]** | removing it (gate≡1) drops parity from 0.63 → 0.53 (chance) |
 | the cell solves hard long-horizon discrete memory | **[K]** | Ember **0.63** vs a parameter-matched **GRU 0.91** on 64-step parity |
 | the protected latch reliably stores a bit | **[B/K]** | works as a detector; brittle to residual false-flips over long horizons |
+| the arrow helps on a continuous tracking stream | **[V]** | arrow-on (uniform) beats arrow-off (S-only) by **~25–30%** clean-MSE |
+| the gate concentrates compute on a continuous *prediction* task | **[K]** | concentration **~1.0×** — plain prediction gives no reason to fire on events; the gate degenerates to a constant |
 
-**The honest headline:** the *economy* is real — a structural surprise-gate that
-keeps the expensive directional flow dark until prediction breaks, demonstrably and
-load-bearingly. The *topological memory latch* is built and partly works but is
-beaten by a plain recurrent state on the one task that stresses it — the same wall
-the parent line already hit ("a phase wheel interpolates; fine for heading, nonsense
-for the digit 7").
+**The honest headline:** the *economy* is real **but conditional** — the surprise-gate
+keeps the expensive flow dark and is load-bearing, yet it only concentrates on events
+when the *task rewards detecting events* (parity did, 3–20×; plain continuous prediction
+does not, ~1.0×). The *topological memory latch* is built and partly works but is beaten
+by a plain recurrent state on the one task that stresses it — the same wall the parent
+line already hit ("a phase wheel interpolates; fine for heading, nonsense for the digit
+7"). On continuous tracking the antisymmetric flow genuinely helps, but a plain GRU is
+still more accurate, and the event-driven efficiency case is unproven until the gate is
+made to detect events.
 
 ---
 
-## Run the two experiments
+## Run the experiments
 
 ```bash
 pip install -r requirements.txt
 python experiments/01_probe_sanity.py    # does A actually carry order? (falsification)
 python experiments/02_kill_keep.py       # train Ember vs GRU; does the gate earn its keep?
+python continuous/efficiency.py          # does the economy pay on a continuous stream?
+python continuous/economy_regime.py      # noise sweep: where (if anywhere) does it pay?
 ```
+
+See [`continuous/README.md`](continuous/README.md) for the efficiency story in full.
 
 Each prints its own numbers and its own verdict. Nothing is hidden in a figure the
 print-out doesn't also state.
@@ -88,6 +97,13 @@ Status legend: **[V]** verified in code · **[K]** a claim this killed · **[B]*
 | `01_probe_sanity.py` | falsifies the premise on synthetic ground truth: a directed signal vs an order-free one, and the same signal time-shuffled. The arrow must collapse when order dies. | **[V]** premise holds (5.05×) |
 | `02_kill_keep.py` | trains Ember, the gate-ablated control, and a GRU on parity-of-surprises; reports accuracy AND whether the gate concentrates on surprise. | **[V/K]** mixed, reported honestly |
 
+### `continuous/` — does the economy pay on a stream? (see its own README)
+| file | what it is | status |
+|---|---|---|
+| `efficiency.py` | one operating point on a noisy switching-oscillator: S-only floor vs uniform-arrow vs gated vs GRU. | **[V]** arrow helps / **[K]** gate doesn't concentrate |
+| `economy_regime.py` | a noise sweep mapping where event-driven gating would pay. | **[K]** ~1.0× concentration everywhere |
+| `ember/continuous.py` | the switching-oscillator generator + `from_timeseries()` adapter for real audio/video. | **[V][LIVE]** |
+
 ---
 
 ## The ledger, consolidated
@@ -109,12 +125,18 @@ Status legend: **[V]** verified in code · **[K]** a claim this killed · **[B]*
 - "the cell, end-to-end, beats a recurrent baseline at long-horizon discrete memory" —
   **false here**: GRU 0.91 vs Ember 0.63 on 64-step parity. The pieces work in isolation;
   composed and trained jointly, the residual false-flip rate corrupts parity over a long horizon.
+- "the surprise-gate spontaneously concentrates on events during continuous prediction" —
+  **false**: ~1.0× concentration across noise levels. A pure prediction objective never needs
+  to know *when* a change happened, only to track it, so the gate gets no gradient toward the
+  events and degenerates to a constant. Event-driven economy needs a task that rewards
+  event-detection, or an explicit gate-on-error supervision term.
 
 **Still a bet:**
 - that the protected rotor latch can be made robust enough (sharper detector, hard commitment,
   or a discrete straight-through flip) to match a recurrent state on long-horizon memory;
-- that the real payoff regime is continuous-time / event-stream / very-long-context data
-  rather than the short synthetic tasks here — untested, needs real data;
+- that adding explicit gate supervision (push the gate toward the model's own normalized
+  prediction-error) makes the economy concentrate on events in a continuous stream — the clear
+  next experiment, and the prerequisite for any real-audio/video efficiency claim;
 - that the probe's `A`-concentration prediction holds on a **real** trained transformer
   (`probe.harvest_hidden_states` is wired but needs a model download — run it where you have
   the network).
@@ -123,15 +145,18 @@ Status legend: **[V]** verified in code · **[K]** a claim this killed · **[B]*
 
 ## What would actually move this
 
-1. **Run the probe on a real model.** `ember/probe.py` has the hook. Does `‖A‖` spike on
+1. **Supervise the gate.** The continuous result says event-driven gating won't emerge from a
+   plain prediction loss. Add a term pushing the gate toward the model's own normalized
+   prediction-error, so "fire on surprise" is trained, then re-run `continuous/economy_regime.py`
+   and see if concentration climbs above 1.0×. This is the prerequisite for any real-stream
+   efficiency claim.
+2. **Run the probe on a real model.** `ember/probe.py` has the hook. Does `‖A‖` spike on
    structured input (code, math) and go flat on scrambled tokens, and peak in middle layers?
-   That is the cheap experiment that licenses everything else.
-2. **Fix the latch or kill it.** Replace the soft rotor with a hard straight-through flip and
-   see if parity reaches GRU level. If it can't be made robust, the honest move is to drop the
-   topological-memory claim and keep only the economy.
-3. **Find the regime where the economy pays.** The gate's value is dark-on-predictable. That
-   only matters when most of the stream is predictable and compute is the constraint — long
-   continuous-time signals, not 64-step toys.
+3. **Fix the latch or kill it.** Replace the soft rotor with a hard straight-through flip and
+   see if parity reaches GRU level. If it can't be made robust, drop the topological-memory
+   claim and keep only the economy.
+4. **Then point it at real audio/video.** `ember/continuous.py:from_timeseries()` frames any
+   real stream into the harness — but only after (1), or the gate will sit at a constant.
 
 ---
 
